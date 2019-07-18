@@ -1,10 +1,41 @@
 import math
 import pygame
 import random
+import can
+
 
 # Define some colors
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
+
+
+def CAN_print():
+
+    # this uses the default configuration (for example from the config file)
+    # see http://python-can.readthedocs.io/en/latest/configuration.html
+    bus = can.interface.Bus()
+
+    # Using specific buses works similar:
+    # bus = can.interface.Bus(bustype='socketcan', channel='vcan0', bitrate=250000)
+    # bus = can.interface.Bus(bustype='pcan', channel='PCAN_USBBUS1', bitrate=250000)
+    # bus = can.interface.Bus(bustype='ixxat', channel=0, bitrate=250000)
+    # bus = can.interface.Bus(bustype='vector', app_name='CANalyzer', channel=0,˓→bitrate=250000)
+    # ...
+
+    #msg = can.Message(arbitration_id=0xc0ffee,
+    #data=[0, 25, 0, 1, 3, 1, 4, 1],
+    #is_extended_id=True)
+
+    #try:
+    #    bus.send(msg)
+    #    print("Message sent on {}".format(bus.channel_info))
+    #except can.CanError:
+    #    print("Message NOT sent")
+
+    for msg in bus:
+        print(msg)
+        if msg.arbitration_id == 0xc0ffee:
+            print(msg.data)
 
 
 # This class represents the ball
@@ -64,13 +95,13 @@ class Ball(pygame.sprite.Sprite):
         self.direction = (180 - self.direction) % 360 + random.randrange(-5, 5)
         self.direction -= diff
         self.direction = (self.direction + 360) % 360
-        if self.direction > 45 and self.direction < 90:
+        if self.direction > 45 and self.direction <= 90:
             self.direction = 45
         elif self.direction > 270 and self.direction < 315:
             self.direction = 315
         elif self.direction > 90 and self.direction < 135:
             self.direction = 135
-        elif self.direction > 225 and self.direction < 270:
+        elif self.direction > 225 and self.direction <= 270:
             self.direction = 225
         print (self.direction)
         # Speed the ball up
@@ -99,11 +130,13 @@ class Ball(pygame.sprite.Sprite):
         # Do we bounce off the left of the screen?
         if self.x <= 0:
             self.direction = (360 - self.direction) % 360
-            # self.x=1
+            self.x += 1
 
         # Do we bounce of the right side of the screen?
         if self.x > self.screenwidth - self.width:
             self.direction = (360 - self.direction) % 360
+            self.x += -1
+
 
 
 # This class represents the bar at the bottom that the player controls
@@ -115,8 +148,9 @@ class Player(pygame.sprite.Sprite):
 
         self.width = 76
         self.height = 26
-        self.image = pygame.Surface([self.width, self.height])
-        self.image.fill(WHITE)
+        #self.image = pygame.Surface([self.width, self.height])
+        self.image = pygame.image.load("Car00.png")
+        #self.image.fill(WHITE)
         self.joystick = joystick
 
         # Make our top-left corner the passed-in location.
@@ -124,11 +158,13 @@ class Player(pygame.sprite.Sprite):
         self.screenheight = pygame.display.get_surface().get_height()
         self.screenwidth = pygame.display.get_surface().get_width()
 
-        self.rect.x = 0
+        self.rect.x = 200-76/2
         self.rect.y = y_pos
 
+        self.cpu_state = 0
+
     # Update the player
-    def update(self):
+    def update(self, cpu_state1):
         pygame.time.delay(33)
 
         keys = pygame.key.get_pressed()
@@ -137,15 +173,20 @@ class Player(pygame.sprite.Sprite):
         if self.joystick == "WASD":
             if keys[pygame.K_a] and not keys[pygame.K_d]:
                 horiz_axis_pos = -1
+                self.image = pygame.image.load("Car00.png")
             elif keys[pygame.K_d] and not keys[pygame.K_a]:
                 horiz_axis_pos = 1
+                self.image = pygame.image.load("Car10.png")
             else:
                 horiz_axis_pos = 0
         else:
-            if keys[pygame.K_LEFT] and not keys[pygame.K_RIGHT]:
+            self.cpu_state=cpu_state1
+            if cpu_state1==1:
                 horiz_axis_pos = -1
-            elif keys[pygame.K_RIGHT] and not keys[pygame.K_LEFT]:
+                self.image = pygame.image.load("Car00.png")
+            elif cpu_state1==-1:
                 horiz_axis_pos = 1
+                self.image = pygame.image.load("Car10.png")
             else:
                 horiz_axis_pos = 0
 
@@ -155,6 +196,8 @@ class Player(pygame.sprite.Sprite):
         # Make sure we don't push the player paddle off the right side of the screen
         if self.rect.x > self.screenwidth - self.width:
             self.rect.x = self.screenwidth - self.width
+        if self.rect.x < 0:
+            self.rect.x = 0
 
 
 score1 = 0
@@ -212,7 +255,7 @@ while not exit_program:
             exit_program = True
 
     # Stop the game if there is an imbalance of 3 points
-    if abs(score1 - score2) > 3:
+    if abs(score1 - score2) >= 2 and score1 >= 7 or score2 >= 7:
         done = True
 
     if not done:
@@ -221,8 +264,31 @@ while not exit_program:
             score1 +=1
         if ball.y < 10:
             score2 += 1
-        player1.update()
-        player2.update()
+        player1.update(0)
+        pos=0
+        if ball.direction>=90 and ball.direction<=270:
+            if random.random() < 0.8:
+                pos=player2.cpu_state
+            elif random.random() < 0.75:
+                pos=0
+            else:
+                if player2.cpu_state==0:
+                    if random.random() < 0.5:
+                        pos = 1
+                    else:
+                        pos = -1
+                else:
+                    pos=-player2.cpu_state
+        else:
+            direct = (player2.rect.x + player2.width / 2) - (ball.rect.x + ball.width / 2)
+            if direct > 10:
+                pos = 1
+            elif direct < -10:
+                pos = -1
+            else:
+                pos = 0
+
+        player2.update(pos)
         ball.update()
 
     # If we are done, print game over
@@ -251,19 +317,22 @@ while not exit_program:
         ball.bounce(diff)
 
     # Print the score
-    scoreprint = "Player 1: " + str(score1)
+    scoreprint = "Player 1: " + str(score2)
     text = font.render(scoreprint, 1, WHITE)
     textpos = (0, 0)
     screen.blit(text, textpos)
 
-    scoreprint = "Player 2: " + str(score2)
+    scoreprint = "CPU: " + str(score1)
     text = font.render(scoreprint, 1, WHITE)
     textpos = (200, 0)
     screen.blit(text, textpos)
 
     # Draw Everything
     movingsprites.draw(screen)
-
+    try:
+        CAN_print()
+    except:
+        print("Check connection")
     # Update the screen
     pygame.display.flip()
 
